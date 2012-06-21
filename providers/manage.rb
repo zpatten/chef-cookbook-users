@@ -3,67 +3,67 @@ action :manage do
   groups = Hash.new(Array.new)
   current_users = Array.new
 
-  search(data_bag_name, user_conditional(:manage)) do |user|
-    current_users << user['id']
+  search(data_bag_name, user_conditional(:manage)) do |u|
+    current_users << u['id']
 
-    Chef::Log.debug("manage: #{user['id']}")
-    Chef::Log.debug("action: #{user['action']}")
+    Chef::Log.debug("manage: #{u['id']}")
+    Chef::Log.debug("action: #{u['action']}")
 
-    home_path = ( user['home'] ? user['home'] : "/home/#{user['id']}" )
+    home_path = ( u['home'] ? u['home'] : "/home/#{u['id']}" )
     manage_home = ((home_path != "/dev/null") ? true : false)
 
 
-    group user['id'] do
-      gid ( user['gid'] || user['uid'] )
+    group u['id'] do
+      gid ( u['gid'] || u['uid'] )
     end
 
-    user user['id'] do
-      comment user['comment']
-      uid user['uid']
-      gid ( user['gid'] || user['uid'] )
-      shell user['shell']
-      password user['password'] if user['password']
+    user u['id'] do
+      comment u['comment']
+      uid u['uid']
+      gid ( u['gid'] || u['uid'] )
+      shell u['shell']
+      password u['password'] if u['password']
       supports :manage_home => manage_home
       home home_path
     end
 
-    Chef::Log.debug("groups(#{user['groups'].inspect})")
-    Array(user['groups']).each do |group|
-      groups[group] += [ user['id'] ]
+    Chef::Log.debug("groups(#{u['groups'].inspect})")
+    Array(u['groups']).each do |group|
+      groups[group] += [ u['id'] ]
     end
 
     if (home_path != "/dev/null")
 
       directory "#{home_path}/.ssh" do
-        owner user['id']
-        group ( user['gid'] || user['uid'] )
+        owner u['id']
+        group ( u['gid'] || u['uid'] )
         mode "700"
       end
 
-      if user['ssh_config']
+      if u['ssh_config']
         template "#{home_path}/.ssh/config" do
           source "config.erb"
-          owner user['id']
-          group ( user['gid'] || user['uid'] )
+          owner u['id']
+          group ( u['gid'] || u['uid'] )
           mode "660"
-          variables :ssh_config => user['ssh_config']
+          variables :ssh_config => u['ssh_config']
         end
       end
 
-      if user['ssh_keys']
+      if u['ssh_keys']
         template "#{home_path}/.ssh/authorized_keys" do
           source "authorized_keys.erb"
-          owner user['id']
-          group ( user['gid'] || user['uid'] )
+          owner u['id']
+          group ( u['gid'] || u['uid'] )
           mode "600"
-          variables :ssh_keys => user['ssh_keys']
+          variables :ssh_keys => u['ssh_keys']
         end
       end
 
     end
   end
 
-  previous_users = ( node['users_current'] || current_users )
+  previous_users = ( (node['jovelabs']['users']['current'] rescue nil) || current_users )
 
   new_users = (current_users - previous_users)
   new_users.each do |user|
@@ -86,10 +86,10 @@ action :manage do
     end
   end
 
-  node.set['users_previous'] = previous_users
-  node.set['users_current'] = current_users
-  node.set['users_new'] = new_users
-  node.set['users_removed'] = removed_users
+  node.set['jovelabs']['users']['previous'] = previous_users
+  node.set['jovelabs']['users']['current'] = current_users
+  node.set['jovelabs']['users']['new'] = new_users
+  node.set['jovelabs']['users']['removed'] = removed_users
 
   Chef::Log.debug("previous_users:#{previous_users.inspect}")
   Chef::Log.debug("current_users:#{current_users.inspect}")
