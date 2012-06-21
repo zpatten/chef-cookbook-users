@@ -1,12 +1,3 @@
-def initialize(*args)
-  super
-  @action = :manage
-
-  Chef::Log.debug("=" * 80)
-  Chef::Log.debug("users_manage provider initialize")
-  Chef::Log.debug("=" * 80)
-end
-
 action :manage do
   data_bag_name = node['users']['data_bag']
   groups = Hash.new(Array.new)
@@ -207,7 +198,7 @@ def user_conditional(action=:manage)
   conditional = ((tmp_conditional.count > 1) ? "(#{tmp})" : tmp)
 
   conditional += " AND action:manage"
-  Chef::Log.debug("conditional(#{conditional.inspect})")
 
+  Chef::Log.debug("conditional(#{conditional.inspect})")
   conditional
 end

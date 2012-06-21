@@ -20,3 +20,12 @@
 actions :manage, :remove, :destroy
 
 attribute :name, :kind_of => String, :name_attribute => true
+
+def initialize(*args)
+  super
+  @action = :manage
+
+  Chef::Log.debug("=" * 80)
+  Chef::Log.debug("users_manage resource initialize")
+  Chef::Log.debug("=" * 80)
+end
