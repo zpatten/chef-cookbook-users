@@ -1,6 +1,10 @@
 def initialize(*args)
   super
   @action = :manage
+
+  Chef::Log.debug("=" * 80)
+  Chef::Log.debug("users_manage provider initialize")
+  Chef::Log.debug("=" * 80)
 end
 
 action :manage do
@@ -11,10 +15,12 @@ action :manage do
   search(data_bag_name, user_conditional(:manage)) do |user|
     current_users << user['id']
 
+    Chef::Log.debug("manage: #{user['id']}")
+    Chef::Log.debug("action: #{user['action']}")
+
     home_path = ( user['home'] ? user['home'] : "/home/#{user['id']}" )
     manage_home = ((home_path != "/dev/null") ? true : false)
 
-    Chef::Log.debug("manage_home(#{manage_home})")
 
     group user['id'] do
       gid ( user['gid'] || user['uid'] )
@@ -31,7 +37,6 @@ action :manage do
     end
 
     Chef::Log.debug("groups(#{user['groups'].inspect})")
-
     Array(user['groups']).each do |group|
       groups[group] += [ user['id'] ]
     end
@@ -67,7 +72,18 @@ action :manage do
     end
   end
 
-  previous_users = ( node['chef_users'] || current_users )
+  previous_users = ( node['users_current'] || current_users )
+
+  new_users = (current_users - previous_users)
+  new_users.each do |user|
+    if !user['password']
+      execute "delete password for #{user}" do
+        command "passwd -d #{user}"
+        action :run
+      end
+    end
+  end
+
   removed_users = (previous_users - current_users)
   removed_users.each do |user|
     user user do
@@ -78,10 +94,15 @@ action :manage do
       action :remove
     end
   end
-  node.set['chef_users'] = current_users
 
-  Chef::Log.debug("current_users:#{current_users.inspect}")
+  node.set['users_previous'] = previous_users
+  node.set['users_current'] = current_users
+  node.set['users_new'] = new_users
+  node.set['users_removed'] = removed_users
+
   Chef::Log.debug("previous_users:#{previous_users.inspect}")
+  Chef::Log.debug("current_users:#{current_users.inspect}")
+  Chef::Log.debug("new_users:#{new_users.inspect}")
   Chef::Log.debug("removed_users:#{removed_users.inspect}")
   Chef::Log.debug("node.set['chef_users']:#{node['chef_users'].inspect}")
 
@@ -103,6 +124,8 @@ action :remove do
 
   search(data_bag_name, user_conditional(:remove)) do |user|
 
+    Chef::Log.debug("remove(#{user['id']})")
+
     user user['id'] do
       action :remove
     end
@@ -119,6 +142,8 @@ action :destroy do
 
   search(data_bag_name, user_conditional(:destroy)) do |user|
 
+    Chef::Log.debug("destroy(#{user['id']})")
+
     user user['id'] do
       action :remove
     end
@@ -129,7 +154,7 @@ action :destroy do
 
     home_path = ( user['home'] ? user['home'] : "/home/#{user['id']}" )
     manage_home = ((home_path != "/dev/null") ? true : false)
-    return true if !manage_home
+    next if !manage_home
 
     directory home_path do
       recursive true
@@ -142,8 +167,20 @@ end
 private
 
 def user_conditional(action=:manage)
+
+  Chef::Log.debug("user_conditional(#{action})")
+
+  if (action == :remove)
+    return "action:remove"
+  elsif (action == :destroy)
+    return "action:destroy"
+  end
+
   authorized_users = node['authorization']['users']
   authorized_groups = node['authorization']['groups']
+
+  Chef::Log.debug("authorized_users.count == #{authorized_users.count}")
+  Chef::Log.debug("authorized_groups.count == #{authorized_groups.count}")
 
   tmp_conditional, user_conditional, group_conditional = Array.new, Array.new, Array.new
 
@@ -169,15 +206,7 @@ def user_conditional(action=:manage)
   tmp = tmp_conditional.join(" AND ")
   conditional = ((tmp_conditional.count > 1) ? "(#{tmp})" : tmp)
 
-  conditional += case action
-  when :manage
-    " NOT action:remove NOT action:destroy"
-  when :remove
-    " AND action:remove"
-  when :destroy
-    " AND action:destroy"
-  end
-
+  conditional += " AND action:manage"
   Chef::Log.debug("conditional(#{conditional.inspect})")
 
   conditional
