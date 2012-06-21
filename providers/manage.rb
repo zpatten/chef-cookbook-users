@@ -46,7 +46,7 @@ action :manage do
           owner u['id']
           group ( u['gid'] || u['uid'] )
           mode "660"
-          variables :ssh_config => u['ssh_config']
+          variables(:ssh_config => u['ssh_config'])
         end
       end
 
@@ -56,7 +56,7 @@ action :manage do
           owner u['id']
           group ( u['gid'] || u['uid'] )
           mode "600"
-          variables :ssh_keys => u['ssh_keys']
+          variables(:ssh_keys => u['ssh_keys'])
         end
       end
 
@@ -99,8 +99,8 @@ action :manage do
 
   Chef::Log.debug("groups(#{groups.inspect})")
   groups.each do |group_name, member_names|
-    group_id = ( node['next_gid'] || 7000 )
-    node.set['next_gid'] = ( group_id + 1)
+    group_id = ( (node['jovelabs']['groups']['next_gid'] rescue nil) || 7000 )
+    node.set['jovelabs']['groups']['next_gid'] = ( group_id + 1)
 
     group group_name do
       gid group_id
