@@ -1,4 +1,4 @@
-maintainer       "Jovelabs"
+maintainer       "Zachary Patten"
 maintainer_email "zpatten@jovelabs.com"
 license          "Apache 2.0"
 description      "Installs/Configures users"
