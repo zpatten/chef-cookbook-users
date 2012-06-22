@@ -1,5 +1,5 @@
-default['users']['data_bag'] = "users"
-default['authorization']['users'] = Array.new
+default['authorization']['users']['data_bag'] = "users"
+default['authorization']['groups']['data_bag'] = "users"
 
-default['groups']['data_bag'] = "groups"
+default['authorization']['users'] = Array.new
 default['authorization']['groups'] = Array.new
