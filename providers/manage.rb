@@ -43,6 +43,12 @@ action :manage do
     # install ssh related items if needed
     if (home_path != "/dev/null")
 
+      directory home_path do
+        owner uid
+        group ( u['gid'] || uid )
+        mode "700"
+      end
+
       directory "#{home_path}/.ssh" do
         owner uid
         group ( u['gid'] || uid )
