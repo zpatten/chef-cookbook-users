@@ -1,6 +1,8 @@
 USER_IDS = ( 2000..5999 ).to_a
 GROUP_IDS = ( 6000..9999 ).to_a
 
+################################################################################
+
 action :manage do
   data_bag_name = (node['authorization']['users']['data_bag'] rescue "users")
   uid_map = ( (node['z']['users']['uids'].to_hash rescue nil) || Hash.new )
@@ -158,6 +160,8 @@ action :manage do
 
 end
 
+################################################################################
+
 action :remove do
   data_bag_name = (node['authorization']['users']['data_bag'] rescue "users")
 
@@ -180,6 +184,8 @@ action :remove do
     Chef::Log.debug("uid_map:#{uid_map.inspect}")
   end
 end
+
+################################################################################
 
 action :destroy do
   data_bag_name = (node['authorization']['users']['data_bag'] rescue "users")
@@ -213,7 +219,9 @@ action :destroy do
   end
 end
 
+################################################################################
 private
+################################################################################
 
 def user_conditional(action=:manage)
 
