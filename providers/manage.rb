@@ -11,25 +11,31 @@ action :manage do
   group_users_map = Hash.new(Array.new)
 
   search(data_bag_name, user_conditional(:manage)) do |u|
-    uid = (uid_map[u['id']] || u['uid'] || (USER_IDS - (uid_map.values + current_uid_map.values)).first)
-    current_uid_map[u['id']] = uid
 
-    Chef::Log.debug("manage: #{u['id']} (uid:#{uid})")
-    Chef::Log.debug("action: #{u['action']}")
+    existing_user_id = (node['etc']['passwd'][u['id']]['uid'] rescue nil)
+    existing_user_group_id = (node['etc']['passwd'][u['id']]['gid'] rescue nil)
+
+    user_id = (existing_user_id || uid_map[u['id']] || u['uid'] || (USER_IDS - (uid_map.values + current_uid_map.values)).first)
+    user_group_id = (existing_user_group_id || u['gid'] || user_id)
+
+    current_uid_map[u['id']] = user_id
+
+    Chef::Log.info("manage: #{u['id']} (uid:#{user_id})")
+    Chef::Log.info("action: #{u['action']}")
 
     home_path = ( u['home'] ? u['home'] : "/home/#{u['id']}" )
     manage_home = ((home_path != "/dev/null") ? true : false)
 
     # create our group first
     group u['id'] do
-      gid ( u['gid'] || uid )
+      gid user_group_id
     end
 
     # next create our user
     user u['id'] do
       comment u['comment']
-      uid uid
-      gid ( u['gid'] || uid )
+      uid user_id
+      gid user_group_id
       shell u['shell']
       password u['password'] if u['password']
       supports :manage_home => manage_home
@@ -37,7 +43,7 @@ action :manage do
     end
 
     # build a map of our membership: groups as the key; array of users as value
-    Chef::Log.debug("groups(#{u['groups'].inspect})")
+    Chef::Log.info("groups(#{u['groups'].inspect})")
     Array(u['groups']).each do |group|
       group_users_map[group] += [ u['id'] ]
     end
@@ -46,22 +52,22 @@ action :manage do
     if (home_path != "/dev/null")
 
       directory home_path do
-        owner uid
-        group ( u['gid'] || uid )
+        owner user_id
+        group user_group_id
         mode "700"
       end
 
       directory "#{home_path}/.ssh" do
-        owner uid
-        group ( u['gid'] || uid )
+        owner user_id
+        group user_group_id
         mode "700"
       end
 
       if u['ssh_config']
         template "#{home_path}/.ssh/config" do
           source "config.erb"
-          owner uid
-          group ( u['gid'] || uid )
+          owner user_id
+          group user_group_id
           mode "660"
           variables(:ssh_config => u['ssh_config'])
         end
@@ -70,8 +76,8 @@ action :manage do
       if u['ssh_keys']
         template "#{home_path}/.ssh/authorized_keys" do
           source "authorized_keys.erb"
-          owner uid
-          group ( u['gid'] || uid )
+          owner user_id
+          group user_group_id
           mode "600"
           variables(:ssh_keys => u['ssh_keys'])
         end
@@ -99,21 +105,22 @@ action :manage do
 
   # take any action needed for auto user removal
   removed_users = (previous_users - current_users)
-  removed_users.each do |user|
-    uid_map.delete(user)
-    user user do
+  removed_users.each do |removed_user|
+    uid_map.delete(removed_user)
+    user removed_user do
       action :remove
     end
 
-    group user do
+    group removed_user do
       action :remove
     end
   end
 
   # create needed group_users_map
-  Chef::Log.debug("group_users_map(#{group_users_map.inspect})")
+  Chef::Log.info("group_users_map(#{group_users_map.inspect})")
   group_users_map.each do |group_name, usernames|
-    group_id = (gid_map[group_name] || (GROUP_IDS - (gid_map.values + current_gid_map.values)).first)
+    existing_group_id = (node['etc']['group'][group_name]['gid'] rescue nil)
+    group_id = (gid_map[group_name] || existing_group_id || (GROUP_IDS - (gid_map.values + current_gid_map.values)).first)
     current_gid_map[group_name] = group_id
 
     group group_name do
@@ -151,12 +158,12 @@ action :manage do
   node.set['z']['users']['group_users_map'] = group_users_map
 
   # vomit to the log if on debug
-  Chef::Log.debug("uid_map:#{uid_map.inspect}")
-  Chef::Log.debug("gid_map:#{gid_map.inspect}")
-  Chef::Log.debug("previous_users:#{previous_users.inspect}")
-  Chef::Log.debug("current_users:#{current_users.inspect}")
-  Chef::Log.debug("new_users:#{new_users.inspect}")
-  Chef::Log.debug("removed_users:#{removed_users.inspect}")
+  Chef::Log.info("uid_map:#{uid_map.inspect}")
+  Chef::Log.info("gid_map:#{gid_map.inspect}")
+  Chef::Log.info("previous_users:#{previous_users.inspect}")
+  Chef::Log.info("current_users:#{current_users.inspect}")
+  Chef::Log.info("new_users:#{new_users.inspect}")
+  Chef::Log.info("removed_users:#{removed_users.inspect}")
 
 end
 
@@ -168,8 +175,8 @@ action :remove do
   search(data_bag_name, user_conditional(:remove)) do |user|
 
     uid_map = ( (node['z']['users']['uids'].to_hash rescue nil) || Hash.new )
-    Chef::Log.debug("uid_map:#{uid_map.inspect}")
-    Chef::Log.debug("remove(#{user['id']})")
+    Chef::Log.info("uid_map:#{uid_map.inspect}")
+    Chef::Log.info("remove(#{user['id']})")
 
     uid_map.delete(user['id'])
     user user['id'] do
@@ -181,7 +188,7 @@ action :remove do
     end
 
     node.set['z']['users']['uids'] = uid_map
-    Chef::Log.debug("uid_map:#{uid_map.inspect}")
+    Chef::Log.info("uid_map:#{uid_map.inspect}")
   end
 end
 
@@ -193,8 +200,8 @@ action :destroy do
   search(data_bag_name, user_conditional(:destroy)) do |user|
 
     uid_map = ( (node['z']['users']['uids'].to_hash rescue nil) || Hash.new )
-    Chef::Log.debug("uid_map:#{uid_map.inspect}")
-    Chef::Log.debug("destroy(#{user['id']})")
+    Chef::Log.info("uid_map:#{uid_map.inspect}")
+    Chef::Log.info("destroy(#{user['id']})")
 
     uid_map.delete(user['id'])
     user user['id'] do
@@ -215,7 +222,7 @@ action :destroy do
     end
 
     node.set['z']['users']['uids'] = uid_map
-    Chef::Log.debug("uid_map:#{uid_map.inspect}")
+    Chef::Log.info("uid_map:#{uid_map.inspect}")
   end
 end
 
@@ -225,7 +232,7 @@ private
 
 def user_conditional(action=:manage)
 
-  Chef::Log.debug("user_conditional(#{action})")
+  Chef::Log.info("user_conditional(#{action})")
 
   if (action == :remove)
     return "action:remove"
@@ -236,8 +243,8 @@ def user_conditional(action=:manage)
   authorized_users = node['authorization']['users']
   authorized_groups = node['authorization']['groups']
 
-  Chef::Log.debug("authorized_users.count == #{authorized_users.count}")
-  Chef::Log.debug("authorized_groups.count == #{authorized_groups.count}")
+  Chef::Log.info("authorized_users.count == #{authorized_users.count}")
+  Chef::Log.info("authorized_groups.count == #{authorized_groups.count}")
 
   tmp_conditional, user_conditional, group_conditional = Array.new, Array.new, Array.new
 
@@ -245,7 +252,7 @@ def user_conditional(action=:manage)
     authorized_users.each do |authorized_user|
       user_conditional << "id:#{authorized_user}"
     end
-    Chef::Log.debug("user_conditional(#{user_conditional.inspect})")
+    Chef::Log.info("user_conditional(#{user_conditional.inspect})")
     tmp = user_conditional.join(" OR ")
     tmp_conditional << ((user_conditional.count > 1) ? "(#{tmp})" : tmp)
   end
@@ -254,7 +261,7 @@ def user_conditional(action=:manage)
     authorized_groups.each do |authorized_group|
       group_conditional << "groups:#{authorized_group}"
     end
-    Chef::Log.debug("group_conditional(#{group_conditional.inspect})")
+    Chef::Log.info("group_conditional(#{group_conditional.inspect})")
     tmp = group_conditional.join(" OR ")
     tmp_conditional << ((group_conditional.count > 1) ? "(#{tmp})" : tmp)
   end
@@ -265,6 +272,6 @@ def user_conditional(action=:manage)
 
   conditional += " AND action:manage"
 
-  Chef::Log.debug("conditional(#{conditional.inspect})")
+  Chef::Log.info("conditional(#{conditional.inspect})")
   conditional
 end
