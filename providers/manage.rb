@@ -1,27 +1,34 @@
-USER_IDS = ( 2000..5999 ).to_a
-GROUP_IDS = ( 6000..9999 ).to_a
+USER_IDS  = (2000..5999).to_a
+GROUP_IDS = (6000..9999).to_a
 
 ################################################################################
 
 action :manage do
   data_bag_name = (node['authorization']['users']['data_bag'] rescue "users")
-  uid_map = ( (node['z']['users']['uids'].to_hash rescue nil) || Hash.new )
-  gid_map = ( (node['z']['users']['gids'].to_hash rescue nil) || Hash.new )
-  current_uid_map, current_gid_map = Hash.new, Hash.new
+
+  taken_uids = (node.etc.passwd.collect{ |z| z[1]['uid'] } rescue Array.new)
+  processed_uids = Array.new
+  Chef::Log.info("taken_uids(#{taken_uids.inspect})")
+
+  taken_gids = (node.etc.group.collect{ |z| z[1]['gid'] } rescue Array.new)
+  processed_gids = Array.new
+  Chef::Log.info("taken_gids(#{taken_gids.inspect})")
+
   group_users_map = Hash.new(Array.new)
 
   search(data_bag_name, user_conditional(:manage)) do |u|
+    next if taken_uids.count == 0
+
+    next_uid = (USER_IDS - (processed_uids + taken_uids).flatten).first
 
     existing_user_id = (node['etc']['passwd'][u['id']]['uid'] rescue nil)
-    existing_user_group_id = (node['etc']['passwd'][u['id']]['gid'] rescue nil)
+    user_id = (existing_user_id || u['uid'] || next_uid)
+    processed_uids << user_id
 
-    user_id = (existing_user_id || uid_map[u['id']] || u['uid'] || (USER_IDS - (uid_map.values + current_uid_map.values)).first)
+    existing_user_group_id = (node['etc']['passwd'][u['id']]['gid'] rescue nil)
     user_group_id = (existing_user_group_id || u['gid'] || user_id)
 
-    current_uid_map[u['id']] = user_id
-
     Chef::Log.info("manage: #{u['id']} (uid:#{user_id})")
-    Chef::Log.info("action: #{u['action']}")
 
     home_path = ( u['home'] ? u['home'] : "/home/#{u['id']}" )
     manage_home = ((home_path != "/dev/null") ? true : false)
@@ -45,7 +52,7 @@ action :manage do
     # build a map of our membership: groups as the key; array of users as value
     Chef::Log.info("groups(#{u['groups'].inspect})")
     Array(u['groups']).each do |group|
-      group_users_map[group] += [ u['id'] ]
+      group_users_map[group] << u['id']
     end
 
     # install ssh related items if needed
@@ -86,85 +93,39 @@ action :manage do
     end
   end
 
-  # now for the magic
-  uid_map.merge!(current_uid_map)
-
-  current_users = current_uid_map.keys
-  previous_users = uid_map.keys
-
   # take any action needed for first time user creation
-  new_users = (current_users - previous_users)
-  new_users.each do |user|
-    if !user['password']
-      execute "delete password for #{user}" do
-        command "passwd -d #{user}"
-        action :run
-      end
-    end
-  end
-
-  # take any action needed for auto user removal
-  removed_users = (previous_users - current_users)
-  removed_users.each do |removed_user|
-    uid_map.delete(removed_user)
-    user removed_user do
-      action :remove
-    end
-
-    group removed_user do
-      action :remove
-    end
-  end
+  # new_users = (current_users - previous_users)
+  # new_users.each do |user|
+  #   if !user['password']
+  #     execute "delete password for #{user}" do
+  #       command "passwd -d #{user}"
+  #       action :run
+  #       only_if { %x( /usr/bin/chage -l #{user} | grep "password must be changed" ) }
+  #     end
+  #     execute "setup password expiration for #{user}" do
+  #       command "chage --lastday 0 --expiredate -1 --inactive -1 --mindays 0 --maxdays 99999 --warndays 7 #{user}"
+  #       action :run
+  #       only_if { %x( /usr/bin/chage -l #{user} | grep "password must be changed" ) }
+  #     end
+  #   end
+  # end
 
   # create needed group_users_map
   Chef::Log.info("group_users_map(#{group_users_map.inspect})")
   group_users_map.each do |group_name, usernames|
+    next if taken_uids.count == 0
+
+    next_gid = (GROUP_IDS - (processed_gids + taken_gids).flatten).first
+
     existing_group_id = (node['etc']['group'][group_name]['gid'] rescue nil)
-    group_id = (gid_map[group_name] || existing_group_id || (GROUP_IDS - (gid_map.values + current_gid_map.values)).first)
-    current_gid_map[group_name] = group_id
+    group_id = (existing_group_id || next_gid)
+    processed_gids << group_id
 
     group group_name do
       gid group_id
       members usernames
     end
   end
-
-  # rinse repeat magic for groups
-  gid_map.merge!(current_gid_map)
-
-  current_groups = current_gid_map.keys
-  previous_groups = gid_map.keys
-
-  # take any action needed for auto user removal
-  removed_groups = (previous_groups - current_groups)
-  removed_groups.each do |g|
-    gid_map.delete(g)
-
-    group g do
-      action :remove
-    end
-  end
-
-  # save everything we did
-  node.set['z']['users']['uids'] = uid_map
-  node.set['z']['users']['gids'] = gid_map
-
-  node.set['z']['users']['users_previous'] = previous_users
-  node.set['z']['users']['users_new'] = new_users
-  node.set['z']['users']['users_removed'] = removed_users
-
-  node.set['z']['users']['groups_previous'] = previous_groups
-  node.set['z']['users']['groups_removed'] = removed_groups
-  node.set['z']['users']['group_users_map'] = group_users_map
-
-  # vomit to the log if on debug
-  Chef::Log.info("uid_map:#{uid_map.inspect}")
-  Chef::Log.info("gid_map:#{gid_map.inspect}")
-  Chef::Log.info("previous_users:#{previous_users.inspect}")
-  Chef::Log.info("current_users:#{current_users.inspect}")
-  Chef::Log.info("new_users:#{new_users.inspect}")
-  Chef::Log.info("removed_users:#{removed_users.inspect}")
-
 end
 
 ################################################################################
@@ -173,12 +134,8 @@ action :remove do
   data_bag_name = (node['authorization']['users']['data_bag'] rescue "users")
 
   search(data_bag_name, user_conditional(:remove)) do |user|
-
-    uid_map = ( (node['z']['users']['uids'].to_hash rescue nil) || Hash.new )
-    Chef::Log.info("uid_map:#{uid_map.inspect}")
     Chef::Log.info("remove(#{user['id']})")
 
-    uid_map.delete(user['id'])
     user user['id'] do
       action :remove
     end
@@ -186,9 +143,6 @@ action :remove do
     group user['id'] do
       action :remove
     end
-
-    node.set['z']['users']['uids'] = uid_map
-    Chef::Log.info("uid_map:#{uid_map.inspect}")
   end
 end
 
@@ -198,12 +152,8 @@ action :destroy do
   data_bag_name = (node['authorization']['users']['data_bag'] rescue "users")
 
   search(data_bag_name, user_conditional(:destroy)) do |user|
-
-    uid_map = ( (node['z']['users']['uids'].to_hash rescue nil) || Hash.new )
-    Chef::Log.info("uid_map:#{uid_map.inspect}")
     Chef::Log.info("destroy(#{user['id']})")
 
-    uid_map.delete(user['id'])
     user user['id'] do
       action :remove
     end
@@ -220,9 +170,6 @@ action :destroy do
       recursive true
       action :delete
     end
-
-    node.set['z']['users']['uids'] = uid_map
-    Chef::Log.info("uid_map:#{uid_map.inspect}")
   end
 end
 
@@ -243,8 +190,8 @@ def user_conditional(action=:manage)
   authorized_users = node['authorization']['users']
   authorized_groups = node['authorization']['groups']
 
-  Chef::Log.info("authorized_users.count == #{authorized_users.count}")
-  Chef::Log.info("authorized_groups.count == #{authorized_groups.count}")
+  Chef::Log.info("authorized_users(#{authorized_users.inspect})")
+  Chef::Log.info("authorized_groups(#{authorized_groups.inspect})")
 
   tmp_conditional, user_conditional, group_conditional = Array.new, Array.new, Array.new
 
