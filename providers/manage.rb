@@ -28,7 +28,7 @@ action :manage do
     existing_user_group_id = (node['etc']['passwd'][u['id']]['gid'] rescue nil)
     user_group_id = (existing_user_group_id || u['gid'] || user_id)
 
-    Chef::Log.info("manage: #{u['id']} (uid:#{user_id})")
+    Chef::Log.info("manage: #{u['id']} (uid:#{user_id}, existing:#{existing_user_id}, next:#{next_uid})")
 
     home_path = ( u['home'] ? u['home'] : "/home/#{u['id']}" )
     manage_home = ((home_path != "/dev/null") ? true : false)
