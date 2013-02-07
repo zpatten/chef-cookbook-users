@@ -52,7 +52,7 @@ action :manage do
     # build a map of our membership: groups as the key; array of users as value
     Chef::Log.info("groups(#{u['groups'].inspect})")
     Array(u['groups']).each do |group|
-      group_users_map[group] << u['id']
+      group_users_map.merge!(group => [u['id']]){ |k,o,n| k = (o + n) }
     end
 
     # install ssh related items if needed
