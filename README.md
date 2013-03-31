@@ -1,6 +1,8 @@
 Description
 ===========
 
+Installs/Configures users
+
 Requirements
 ============
 
